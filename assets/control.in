@@ -1,0 +1,35 @@
+Package: mediamtx
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: @MAINTAINER@
+Installed-Size: @SIZE@
+Depends: systemd
+Section: net
+Priority: optional
+Homepage: https://github.com/bluenviron/mediamtx
+Description: MediaMTX Streaming Server - RTSP/RTMP/HLS/WebRTC/SRT relay
+ MediaMTX is a self-hosted, dependency-free media streaming server written
+ in Go. A single binary serves RTSP, RTMP, HLS, WebRTC and SRT at the same
+ time: cameras and encoders publish a stream once, and any number of players
+ pull it over the protocol of their choice. It is a natural relay/base for
+ IP camera monitoring and live broadcasting on a NAS.
+ .
+ A built-in status console opens in a new browser tab from the TOS desktop
+ route /mediamtx/: it lists the active paths, links to the HLS player page
+ and proxies the complete management API. The management API (9997), metrics
+ (9998) and playback (9996) listeners are bound to loopback only and are
+ reachable exclusively through the TOS web server gateway.
+ .
+ Media ports are opened for LAN clients because they are the core function:
+ RTSP 8554, RTMP 1935, HLS 8888, WebRTC 8889 (UDP/ICE 8189), SRT 8890.
+ Anonymous readers are allowed; publishing requires the credentials generated
+ at install time and stored root-readable in
+ /var/lib/mediamtx/publisher_password.txt.
+ .
+ Configuration lives in /var/lib/mediamtx/mediamtx.yml and is hot-reloaded.
+ Recordings and configuration are kept in /var/lib/mediamtx: 'apt remove'
+ keeps them, 'apt purge' deletes them. The service runs as a dedicated
+ unprivileged user in a hardened systemd sandbox.
+ .
+ Upstream: https://github.com/bluenviron/mediamtx (MIT)
+ Upstream author: bluenviron. Packaged for TOS by the deb Maintainer.

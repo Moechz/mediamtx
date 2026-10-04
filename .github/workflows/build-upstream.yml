@@ -1,0 +1,134 @@
+name: Build upstream binaries
+
+# V6 (review finding): a TOS deb must not ship unauditable prebuilt binaries.
+# This workflow builds MediaMTX from the upstream source tag with a fixed Go
+# toolchain, CGO_ENABLED=0 (fully static), no UPX and -trimpath, and asserts
+# that two independent builds are byte-identical (bit-reproducible).
+#
+# Audit chain: upstream source tag + commit → this public workflow file →
+# public Actions log → `build-v<tag>` Release with SHA256SUMS.
+#
+# Upstream reference recipe (kept verbatim except -trimpath):
+#   https://github.com/bluenviron/mediamtx/blob/main/scripts/binaries.mk
+#   https://github.com/bluenviron/mediamtx/blob/main/.github/workflows/release.yml
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Upstream MediaMTX tag to build (e.g. v1.21.1)'
+        required: true
+        default: 'v1.21.1'
+      release_tag:
+        description: 'Attach artifacts to this release tag (e.g. build-v1.21.1); empty = artifact only'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: '1.26.8'
+  GOFLAGS: -trimpath
+
+jobs:
+  build:
+    name: linux/amd64 + linux/arm64 (static, no UPX, reproducible)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout upstream MediaMTX at ${{ github.event.inputs.tag }}
+        uses: actions/checkout@v4
+        with:
+          repository: bluenviron/mediamtx
+          ref: ${{ github.event.inputs.tag }}
+          fetch-depth: 0            # tags needed: go generate derives VERSION from git describe
+          persist-credentials: false
+
+      - name: Record source identity
+        run: |
+          echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "SOURCE_DATE=$(git log -1 --format=%cI)" >> "$GITHUB_ENV"
+          git describe --tags
+          test -z "$(git status --porcelain)" || { echo "worktree dirty"; exit 1; }
+
+      - name: Set up Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: false
+          cache: false
+
+      - name: Generate pinned assets (hls.js + rpicamera, sha256-pinned upstream)
+        run: go generate ./...
+
+      - name: Build twice per arch and assert bit-identical (reproducibility)
+        run: |
+          mkdir -p out
+          for pair in "amd64" "arm64"; do
+            arch="$pair"
+            for run in 1 2; do
+              export CGO_ENABLED=0 GOOS=linux GOARCH="$arch"
+              export GOCACHE="$RUNNER_TEMP/gocache-${arch}-${run}"
+              rm -rf "$GOCACHE"
+              echo "== build linux/$arch run $run =="
+              go build -o "mediamtx-$arch-$run" .
+              sha256sum "mediamtx-$arch-$run"
+            done
+            h1=$(sha256sum "mediamtx-$arch-1" | cut -d' ' -f1)
+            h2=$(sha256sum "mediamtx-$arch-2" | cut -d' ' -f1)
+            if [ "$h1" != "$h2" ]; then
+              echo "REPRODUCIBILITY FAILURE for $arch: $h1 != $h2"
+              exit 1
+            fi
+            echo "reproducible linux/$arch: $h1"
+            mkdir -p "pkg-$arch"
+            cp "mediamtx-$arch-1" "pkg-$arch/mediamtx"
+            chmod 0755 "pkg-$arch/mediamtx"
+          done
+
+      - name: Smoke test (amd64 binary runs on the runner)
+        run: |
+          ./mediamtx-amd64-1 --version
+          ./pkg-amd64/mediamtx --version
+
+      - name: Package & checksums
+        run: |
+          for arch in amd64 arm64; do
+            mkdir -p "tmp-$arch"
+            cp "pkg-$arch/mediamtx" "tmp-$arch/mediamtx"
+            tar -czf "out/mediamtx-linux-$arch.tar.gz" --owner=0 --group=0 -C "tmp-$arch" mediamtx
+          done
+          ( cd out && sha256sum mediamtx-linux-*.tar.gz > SHA256SUMS && cat SHA256SUMS )
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediamtx-source-build-${{ github.event.inputs.tag }}
+          path: out/
+          if-no-files-found: error
+
+      - name: Attach to release (${{ github.event.inputs.release_tag }})
+        if: github.event.inputs.release_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: 'Source build of upstream ${{ github.event.inputs.tag }}'
+          body: |
+            Fully-static MediaMTX binaries built **from source** at upstream tag
+            `${{ github.event.inputs.tag }}` (commit `${{ env.SOURCE_COMMIT }}`,
+            ${{ env.SOURCE_DATE }}) by the public workflow
+            [`.github/workflows/build-upstream.yml`](https://github.com/Moechz/mediamtx/blob/main/.github/workflows/build-upstream.yml).
+
+            * Go toolchain: go1.26.8 (pinned in `config.env`)
+            * `CGO_ENABLED=0` fully static, **no UPX**, `GOFLAGS=-trimpath`
+            * **Bit-reproducible**: each architecture is built twice with independent
+              `GOCACHE` directories and the two sha256 sums are asserted equal in CI
+            * `go generate ./...` downloads hls.js v1.7.3 and mediamtx-rpicamera v2.9.0,
+              both verified against sha256 hashes pinned in the upstream source tree
+
+            Verify:
+            ```
+            sha256sum --check SHA256SUMS
+            ```
+          files: out/*
+          prerelease: true

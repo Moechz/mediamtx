@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MediaMTX — Streaming Server</title>
+<style>
+  :root { --bg:#111418; --panel:#1b2027; --line:#2c333d; --fg:#e6e9ee; --dim:#9aa4b2; --acc:#4da3ff; --ok:#39c07a; --warn:#e0a33a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif; }
+  header { display:flex; align-items:baseline; gap:12px; padding:18px 24px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .meta { color:var(--dim); font-size:12px; }
+  main { padding:20px 24px 48px; max-width:1080px; margin:0 auto; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:18px; }
+  h2 { font-size:14px; margin:0 0 12px; font-weight:600; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:500; font-size:12px; }
+  tr:last-child td { border-bottom:none; }
+  code, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; }
+  .dim { color:var(--dim); }
+  .ok { color:var(--ok); } .off { color:var(--warn); }
+  a { color:var(--acc); text-decoration:none; } a:hover { text-decoration:underline; }
+  button, input { font:inherit; }
+  input[type=text] { background:#0e1116; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:7px 10px; width:220px; }
+  button { background:#232b35; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:7px 12px; cursor:pointer; }
+  button:hover { background:#2b3542; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; border:1px solid var(--line); font-size:11.5px; color:var(--dim); }
+  .empty { color:var(--dim); padding:6px 0; }
+  #err { display:none; color:#ff8b8b; margin-top:10px; }
+  footer { color:var(--dim); font-size:12px; padding:0 24px 40px; max-width:1080px; margin:0 auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MediaMTX</h1>
+  <span class="meta" id="ver">…</span>
+  <span class="meta" id="uptime"></span>
+</header>
+<main>
+  <section>
+    <h2>Active paths / 活动路径</h2>
+    <div id="paths" class="empty">Loading…</div>
+    <div id="err"></div>
+  </section>
+
+  <section>
+    <h2>Open a stream / 打开播放</h2>
+    <div class="row">
+      <input type="text" id="pathInput" placeholder="path name，例如 cam1">
+      <button id="playBtn">Play (HLS)</button>
+      <span class="dim">经 TOS 网关用浏览器内置播放器播放</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Endpoints / 接入地址</h2>
+    <table>
+      <tr><th style="width:130px">Protocol</th><th>URL (replace <span class="mono">&lt;path&gt;</span>)</th><th style="width:180px">Notes</th></tr>
+      <tr><td>RTSP</td><td class="mono" id="epRtsp">rtsp://…</td><td class="dim">摄像头推流 / VLC 拉流</td></tr>
+      <tr><td>RTMP</td><td class="mono" id="epRtmp">rtmp://…</td><td class="dim">OBS 推流</td></tr>
+      <tr><td>HLS</td><td class="mono" id="epHls">…</td><td class="dim">浏览器播放（经网关）</td></tr>
+      <tr><td>WebRTC</td><td class="mono" id="epWrtc">…</td><td class="dim">浏览器低延迟（直连端口）</td></tr>
+      <tr><td>SRT</td><td class="mono" id="epSrt">…</td><td class="dim">弱网推流</td></tr>
+      <tr><td>Management API</td><td class="mono" id="epApi">…</td><td class="dim">REST，经网关鉴权</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Notes / 说明</h2>
+    <div class="dim">
+      推流需要用户名 <span class="mono">publisher</span> 与安装时生成的密码（NAS 管理员可读
+      <span class="mono">/var/lib/mediamtx/publisher_password.txt</span>）；观看默认匿名。
+      配置与录制文件位于 <span class="mono">/var/lib/mediamtx/</span>，编辑
+      <span class="mono">mediamtx.yml</span> 后服务热加载。
+    </div>
+  </section>
+</main>
+<footer>
+  MediaMTX @@VERSION@@ · upstream <a href="https://github.com/bluenviron/mediamtx" target="_blank" rel="noreferrer noopener">bluenviron/mediamtx</a> ·
+  API docs <a href="https://github.com/bluenviron/mediamtx/blob/main/apidocs/openapi.yaml" target="_blank" rel="noreferrer noopener">openapi.yaml</a>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var BASE = new URL(".", location.href).pathname;   // "/mediamtx/"
+  var HOST = location.hostname;
+  var P = { rtsp: @@RTSP_PORT@@, rtmp: @@RTMP_PORT@@, hls: @@HLS_PORT@@, webrtc: @@WEBRTC_PORT@@, srt: @@SRT_PORT@@ };
+
+  function setText(id, v) { var e = document.getElementById(id); if (e) e.textContent = v; }
+  function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+  function humanBytes(n) {
+    if (!n) return "0 B";
+    var u = ["B","KB","MB","GB","TB"], i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return n.toFixed(i ? 1 : 0) + " " + u[i];
+  }
+  function uptime(iso) {
+    var s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    return (d ? d + "d " : "") + h + "h " + m + "m";
+  }
+  function api(path) {
+    return fetch(BASE + "api" + path, { headers: { "Accept": "application/json" }, credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+  }
+  function play(name) { if (name) location.href = BASE + "hls/" + encodeURIComponent(name) + "/"; }
+
+  // 端点表
+  setText("epRtsp", "rtsp://" + HOST + ":" + P.rtsp + "/<path>");
+  setText("epRtmp", "rtmp://" + HOST + ":" + P.rtmp + "/<path>");
+  setText("epHls", location.origin + BASE + "hls/<path>/");
+  setText("epWrtc", "http://" + HOST + ":" + P.webrtc + "/<path>");
+  setText("epSrt", "srt://" + HOST + ":" + P.srt + "?streamid=read:<path>");
+  setText("epApi", location.origin + BASE + "api/v3/");
+
+  document.getElementById("playBtn").addEventListener("click", function () {
+    play(document.getElementById("pathInput").value.trim());
+  });
+  document.getElementById("pathInput").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") play(e.target.value.trim());
+  });
+
+  api("/v3/info").then(function (info) {
+    setText("ver", "v" + info.version);
+    setText("uptime", "up " + uptime(info.started));
+  }).catch(function () {});
+
+  api("/v3/paths/list?itemsPerPage=100").then(function (data) {
+    var box = document.getElementById("paths");
+    box.textContent = "";
+    box.classList.remove("empty");
+    var items = (data && data.items) || [];
+    if (!items.length) {
+      box.className = "empty";
+      box.textContent = "暂无活动路径。用 RTSP/RTMP/SRT 推送一路流后会自动出现。/ No active paths yet.";
+      return;
+    }
+    var t = el("table");
+    var thead = el("tr");
+    ["Path","Source","Status","Readers","Traffic",""].forEach(function (h) { thead.appendChild(el("th", null, h)); });
+    t.appendChild(thead);
+    items.forEach(function (p) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "mono", p.name));
+      tr.appendChild(el("td", "dim", p.source && p.source.type ? p.source.type : "—"));
+      var st = el("td");
+      st.appendChild(el("span", p.online ? "ok" : "off", p.online ? "online" : "offline"));
+      tr.appendChild(st);
+      tr.appendChild(el("td", "dim", String((p.readers || []).length)));
+      tr.appendChild(el("td", "dim", humanBytes(p.inboundBytes) + " in / " + humanBytes(p.outboundBytes) + " out"));
+      var act = el("td");
+      var a = el("a", null, "Play ▸");
+      a.href = BASE + "hls/" + encodeURIComponent(p.name) + "/";
+      act.appendChild(a);
+      tr.appendChild(act);
+      t.appendChild(tr);
+    });
+    box.appendChild(t);
+  }).catch(function (e) {
+    var box = document.getElementById("paths");
+    box.className = "empty";
+    box.textContent = "无法读取管理 API（/mediamtx/api/）。";
+    var err = document.getElementById("err");
+    err.style.display = "block";
+    err.textContent = "API error: " + e.message + " — 请确认服务正在运行，且已通过 TOS 应用入口访问。";
+  });
+})();
+</script>
+</body>
+</html>

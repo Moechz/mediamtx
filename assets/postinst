@@ -1,0 +1,192 @@
+#!/bin/bash
+# postinst - 安装/升级后处理
+#
+# 组件树（/usr/local/mediamtx 下的二进制/配置/单元/nginx）随 deb 分发，
+# postinst 负责“派生状态”：属主、webui 解压、系统层注册（service+nginx）、
+# 首装初始化（随机发布密码 + 生成 mediamtx.yml）、启动与就绪检查。
+# 经 TOS 应用中心安装时平台也会注册 init.d 服务与 nginx 配置；本脚本全部幂等，
+# 两条安装路径行为一致。
+#
+# 安全（F10）：随机密码只写 root-0600 文件，绝不进 journal/dpkg/维护日志。
+set -e
+
+APP_ID=mediamtx
+APP_DIR=/usr/local/mediamtx
+APP_USER=mediamtx
+DATA_DIR=/var/lib/mediamtx
+API_PORT=9997
+MAINT_LOG=/var/log/mediamtx-maint.log
+PASS_FILE=$DATA_DIR/publisher_password.txt
+CONF=$DATA_DIR/mediamtx.yml
+
+pkg_log() {
+  mkdir -p /var/log 2>/dev/null || true
+  echo "$(date '+%F %T') $*" >> "$MAINT_LOG" 2>/dev/null || true
+}
+chmod 0600 "$MAINT_LOG" 2>/dev/null || true
+pkg_log postinst "$1" "new=@VERSION@${2:+ old=$2}"
+
+case "$1" in
+  configure)
+    # 1. 用户兜底
+    if ! id -u "$APP_USER" > /dev/null 2>&1; then
+      useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$APP_USER" 2>/dev/null || true
+    fi
+
+    # 2. 应用目录属主（nginx 需要能读静态控制台：目录 0755、文件 0644）
+    chown -R "$APP_USER:$APP_USER" "$APP_DIR" 2>/dev/null || true
+
+    # 3. 解压 webui.bz2（状态控制台静态页 → $APP_DIR/index.html）
+    if [ -f "$APP_DIR/webui.bz2" ]; then
+      ( cd "$APP_DIR" && tar -xjf webui.bz2 2>/dev/null || true )
+      chown "$APP_USER:$APP_USER" "$APP_DIR"/index.html 2>/dev/null || true
+      chmod 0644 "$APP_DIR"/index.html 2>/dev/null || true
+    fi
+
+    # 4. 环境文件首装引导（仅不存在时复制，升级永不覆盖）
+    if [ ! -e "$APP_DIR/$APP_ID.env" ] && [ -e "$APP_DIR/$APP_ID.env.example" ]; then
+      install -m 0640 -o "$APP_USER" -g "$APP_USER" \
+        "$APP_DIR/$APP_ID.env.example" "$APP_DIR/$APP_ID.env"
+      pkg_log postinst bootstrap "$APP_ID.env 首装"
+    fi
+
+    # 5. 数据目录
+    install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$DATA_DIR"
+
+    # 6. 首装生成 mediamtx.yml（仅不存在时；升级永不覆盖用户配置）
+    #    随机生成发布密码，写进配置的 publisher 用户；同时写 root-0600 密码文件。
+    if [ ! -f "$CONF" ]; then
+      PUB_PASS=$(LC_ALL=C tr -dc 'A-HJ-NP-Za-km-z2-9' < /dev/urandom | head -c 24)
+      install -m 0640 -o "$APP_USER" -g "$APP_USER" \
+        "$APP_DIR/mediamtx.yml.example" "$CONF"
+      # 占位符 -> 随机密码（字符集为字母数字，无 sed 特殊字符）
+      sed -i "s|__MTX_PUBLISH_PASSWORD__|$PUB_PASS|g" "$CONF"
+      chown "$APP_USER:$APP_USER" "$CONF"
+      chmod 0640 "$CONF"
+      # 密码仅落此文件（root 0600）；不进维护日志/dpkg 输出
+      ( umask 077; {
+          echo "MediaMTX 推流账号（publish）"
+          echo "username: publisher"
+          echo "password: $PUB_PASS"
+          echo ""
+          echo "观看（read/playback）默认匿名，无需账号。"
+          echo "如需修改，请编辑 $CONF 的 authInternalUsers 后重启服务。"
+        } > "$PASS_FILE" )
+      pkg_log postinst bootstrap "mediamtx.yml 预置（发布账号 publisher，密码写入 $PASS_FILE）"
+    fi
+    chown -R "$APP_USER:$APP_USER" "$DATA_DIR" 2>/dev/null || true
+    # 发布密码文件仅 root 可读（F10；坑 24：用数字 0 防 root 名重映射）
+    if [ -f "$PASS_FILE" ]; then
+      chown 0:0 "$PASS_FILE" 2>/dev/null || true
+      chmod 0600 "$PASS_FILE" 2>/dev/null || true
+    fi
+
+    # 7. 系统层注册（幂等；应用中心安装时平台也会做同样的事）
+    install -d -m 0755 /etc/systemd/system
+    install -m 0644 "$APP_DIR/init.d/$APP_ID.service" \
+      /etc/systemd/system/$APP_ID.service
+
+    # 7b. 坑 23/27：个别 TOS 构建在 NoNewPrivileges 下拒绝一切 execve（203/EXEC）。
+    #     装机探测；仅失败时安装“最小降级 drop-in”，能力边界/服务用户/端口一概不变。
+    #     MEDIAMTX_EXEC_COMPAT=force 强制演练降级；=off 跳过。
+    DROPIN_DIR=/etc/systemd/system/$APP_ID.service.d
+    DROPIN=$DROPIN_DIR/80-$APP_ID-exec-compat.conf
+    compat_mode=${MEDIAMTX_EXEC_COMPAT:-auto}
+    need_compat=0
+    if [ "$compat_mode" = "force" ]; then
+      need_compat=1
+      pkg_log postinst compat "强制启用降级 drop-in"
+    elif [ "$compat_mode" != "off" ]; then
+      if command -v systemd-run > /dev/null 2>&1; then
+        if timeout 15 systemd-run --wait --collect -p NoNewPrivileges=true /bin/true > /dev/null 2>&1; then
+          need_compat=0
+        else
+          need_compat=1
+          pkg_log postinst compat "探测失败：本机在 NoNewPrivileges 下拒绝 execve，启用降级 drop-in"
+        fi
+      fi
+    fi
+    if [ "$need_compat" = "1" ]; then
+      install -d -m 0755 "$DROPIN_DIR"
+      cat > "$DROPIN" <<'EOCOMPAT'
+# 由 mediamtx postinst 生成（坑 23）：该 TOS 构建在 NoNewPrivileges=true 下
+# 拒绝任何用户的 execve（systemd 203/EXEC）。此处仅放开 NNP 与两项与之
+# 冲突的加固开关；服务用户、CapabilityBoundingSet（空集）、回环/端口不变。
+[Service]
+NoNewPrivileges=false
+RestrictSUIDSGID=false
+RestrictAddressFamilies=
+EOCOMPAT
+    else
+      # 探测通过/关闭：移除本包生成的降级文件（可回滚），目录空则删
+      rm -f "$DROPIN" 2>/dev/null || true
+      rmdir "$DROPIN_DIR" 2>/dev/null || true
+    fi
+
+    systemctl daemon-reload
+
+    # 8. 启用（幂等；升级路径 prerm 只停不拆，故两条路径都必须 enable）并（重）启动
+    systemctl enable $APP_ID.service > /dev/null 2>&1 || true
+    if [ -n "${2:-}" ]; then
+      systemctl restart $APP_ID.service 2>/dev/null || true
+    else
+      # 首装时先 reset-failed，避免上一次失败状态阻止启动
+      systemctl reset-failed $APP_ID.service 2>/dev/null || true
+      systemctl start $APP_ID.service 2>/dev/null || true
+    fi
+
+    # 9. nginx 路由（平台会加载 nginx/$APP_ID.conf，此处在系统 nginx 兜底双落盘）
+    #    坑 5：裸 location 仅在 server 上下文合法（TOS 的 conf.d 即 include 在 server 层）；
+    #    写入后立即 nginx -t 校验，失败回滚，绝不留下导致 nginx 无法 reload 的配置。
+    if command -v nginx > /dev/null 2>&1 && [ -d /etc/nginx/conf.d ]; then
+      install -m 0644 "$APP_DIR/nginx/$APP_ID.conf" \
+        /etc/nginx/conf.d/$APP_ID.conf
+      if nginx -t > /dev/null 2>&1; then
+        nginx -s reload > /dev/null 2>&1 || true
+        pkg_log postinst nginx "已注册 /mediamtx/ 路由"
+      else
+        rm -f /etc/nginx/conf.d/$APP_ID.conf
+        echo "提示: 本机 nginx 的 conf.d 不在 server 上下文，已跳过自动注册 /mediamtx/。" >&2
+        echo "      请把 $APP_DIR/nginx/$APP_ID.conf 的 location 段手工加入对应 server 块。" >&2
+        pkg_log postinst warn "nginx -t 失败，已回滚 conf.d 注册"
+      fi
+    fi
+
+    # 10. 就绪检查（坑 26）：轮询管理 API 而非只看 restart 返回码，30s 上限
+    READY=0
+    for i in $(seq 1 30); do
+      if curl -fsS -m 2 "http://127.0.0.1:$API_PORT/v3/info" 2>/dev/null | grep -q '"version"'; then
+        READY=1
+        break
+      fi
+      sleep 1
+    done
+    if [ "$READY" = "1" ]; then
+      pkg_log postinst "mediamtx.service 就绪（/v3/info 200）"
+    else
+      echo "警告: mediamtx 服务 30 秒内未就绪，排查命令:" >&2
+      echo "      journalctl -u mediamtx -n 50 --no-pager" >&2
+      echo "      systemctl --no-pager -l status mediamtx" >&2
+      systemctl --no-pager -l status $APP_ID.service 2>/dev/null | head -15 >&2 || true
+      pkg_log postinst warn "健康检查超时"
+    fi
+
+    pkg_log postinst done "@VERSION@"
+    echo ""
+    if [ -n "${2:-}" ]; then
+      echo "MediaMTX @VERSION@ 已完成升级（自 $2）。"
+    else
+      echo "MediaMTX @VERSION@ 已安装。"
+    fi
+    echo "  打开控制台: TOS 桌面 → MediaMTX 图标（新标签页 http://<NAS的IP>:8181/mediamtx/）"
+    echo "  推流账号  : publisher"
+    echo "  推流密码  : cat $PASS_FILE   （root 0600；观看无需账号）"
+    echo "  配置文件  : $CONF（修改后自动热加载）"
+    echo "  数据目录  : $DATA_DIR（配置/录制，remove 保留 / purge 删除）"
+    echo "  媒体端口  : RTSP 8554 / RTMP 1935 / HLS 8888 / WebRTC 8889(UDP 8189) / SRT 8890"
+    echo "  管理 API  : 仅 127.0.0.1:9997，经 TOS 网关 /mediamtx/api/ 访问"
+    echo ""
+    ;;
+esac
+
+exit 0

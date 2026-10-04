@@ -1,0 +1,49 @@
+[Unit]
+Description=MediaMTX Streaming Server (RTSP/RTMP/HLS/WebRTC/SRT)
+Documentation=https://github.com/bluenviron/mediamtx
+After=network.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=mediamtx
+Group=mediamtx
+# 配置文件在数据目录（相对路径产物如录制/日志也落在数据目录）；
+# 服务会热加载配置文件的改动。
+WorkingDirectory=/var/lib/mediamtx
+# ExecStart 参数全部写死，绝无 $ 变量展开（systemd 只支持基本 ${VAR}，
+# 不支持 shell 风格默认值，曾致全环境 502 —— 见知识库坑 1）。
+ExecStart=/usr/local/mediamtx/bin/mediamtx /var/lib/mediamtx/mediamtx.yml
+EnvironmentFile=-/usr/local/mediamtx/mediamtx.env
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+# 按 TOS 规范不配置 Restart/RestartSec —— 生命周期由应用中心统一管理。
+# 计划任务式的前台流媒体服务；MediaMTX 自身对断连客户端有重试与清理逻辑。
+
+# ---- 沙箱加固（非 root + 最小权限）----
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/mediamtx
+StateDirectory=mediamtx
+LimitNOFILE=65536
+UMask=0027
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

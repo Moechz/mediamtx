@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MediaMTX for TOS — Privacy Policy</title>
+<style>
+  body { max-width:820px; margin:0 auto; padding:32px 20px 64px; font:15px/1.7 -apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif; color:#1d2229; }
+  h1 { font-size:22px; } h2 { font-size:17px; margin-top:28px; }
+  hr { border:none; border-top:1px solid #dfe3e8; margin:36px 0; }
+  code { background:#f2f4f7; padding:1px 5px; border-radius:4px; }
+  .dim { color:#5b6673; font-size:13px; }
+</style>
+</head>
+<body>
+<h1>MediaMTX for TOS — Privacy Policy</h1>
+<p class="dim">Last updated: 2026-10. This policy describes the TOS 7 package of MediaMTX.</p>
+
+<h2>1. Summary / 摘要</h2>
+<p>This application is a self-hosted media streaming server. It does not contain analytics, telemetry,
+advertising, crash reporting or any "phone home" feature. No personal data is sent to the package
+maintainer or to the upstream project.</p>
+<p>本应用是自托管的流媒体服务器，不含任何统计分析、遥测、广告、崩溃上报或“回传”功能，不会向打包者或上游项目发送任何个人数据。</p>
+
+<h2>2. What is processed and where it stays / 处理内容与存放位置</h2>
+<ul>
+  <li><strong>Media streams</strong> published by cameras/encoders pass through the server in memory and are
+      forwarded to readers. They can be recorded to disk only if you explicitly enable recording in
+      <code>/var/lib/mediamtx/mediamtx.yml</code>. Recordings stay on your NAS.</li>
+  <li><strong>Connection data</strong> (client IP address, protocol, path name, byte counters) is kept in memory
+      for the management API and metrics and is visible to NAS administrators.</li>
+  <li><strong>Logs</strong> are written to the system journal / stdout and are stored locally on your NAS.</li>
+  <li><strong>Configuration and credentials</strong> are stored locally in <code>/var/lib/mediamtx/</code>
+      (including the generated publisher password file, which is readable only by the NAS administrator).</li>
+</ul>
+
+<h2>3. Network access / 网络访问</h2>
+<p>The server only receives inbound connections on your local network (RTSP/RTMP/HLS/WebRTC/SRT ports).
+The management API, metrics and playback listeners are bound to loopback (<code>127.0.0.1</code>) and are
+reachable only through the TOS web server gateway, which is protected by TOS account authentication.
+The application itself never initiates outbound connections unless you explicitly configure a feature
+that needs one (for example an external HTTP/JWT authentication server, a redirect/on-demand source, or
+a playback server).</p>
+<p>服务器仅在本机所在局域网接收入站连接（RTSP/RTMP/HLS/WebRTC/SRT 端口）。管理 API、指标与回放服务
+只监听回环地址，只能经 TOS 网页网关（受 TOS 账号认证保护）访问。除非你显式启用需要外联的功能
+（如外部 HTTP/JWT 认证源、redirect/按需拉流源或回放服务器），应用自身不会主动发起外连。</p>
+
+<h2>4. Children / 未成年人</h2>
+<p>This is an infrastructure service; it is not directed at children and collects no personal data.</p>
+
+<h2>5. Changes and contact / 变更与联系</h2>
+<p>Changes to this policy will be published in the package and its public repository. Questions or
+requests: please open an issue at <a href="https://github.com/Moechz/mediamtx/issues">github.com/Moechz/mediamtx/issues</a>.</p>
+
+<hr>
+<p class="dim">MediaMTX is developed upstream by the bluenviron project
+(<a href="https://github.com/bluenviron/mediamtx">github.com/bluenviron/mediamtx</a>, MIT).
+This TOS package is an independent port.</p>
+</body>
+</html>

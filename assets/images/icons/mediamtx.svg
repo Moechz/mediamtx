@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="MediaMTX Streaming Server">
+  <circle cx="256" cy="256" r="244" fill="none" stroke="#39c07a" stroke-width="14" stroke-opacity="0.20"/>
+  <circle cx="256" cy="256" r="200" fill="none" stroke="#4da3ff" stroke-width="18" stroke-opacity="0.30"/>
+  <circle cx="256" cy="256" r="140" fill="none" stroke="#4da3ff" stroke-width="22" stroke-opacity="0.55"/>
+  <circle cx="256" cy="256" r="78" fill="#4da3ff"/>
+  <path d="M234 210 L234 302 L316 256 Z" fill="#0f1318"/>
+</svg>

@@ -1,0 +1,21 @@
+#!/bin/bash
+# preinst - 安装/升级前处理（TOS 规范：专用用户必须在此创建）
+set -e
+
+APP_USER=mediamtx
+DATA_DIR=/var/lib/mediamtx
+MAINT_LOG=/var/log/mediamtx-maint.log
+mkdir -p /var/log 2>/dev/null || true
+echo "$(date '+%F %T') preinst $*" >> "$MAINT_LOG" 2>/dev/null || true
+
+# 创建专用系统用户（平台安装路径下亦会自动创建；此处保证手动 apt 安装也可用；
+# --user-group 显式建同名主组，不依赖 USERGROUPS_ENAB 默认值）
+if ! id -u "$APP_USER" > /dev/null 2>&1; then
+  useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$APP_USER" 2>/dev/null || true
+fi
+
+# 数据目录（配置/录制/日志）
+mkdir -p "$DATA_DIR"
+chown -R "$APP_USER:$APP_USER" "$DATA_DIR" 2>/dev/null || true
+
+exit 0

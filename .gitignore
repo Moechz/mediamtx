@@ -1,0 +1,8 @@
+# 上游研究副本与构建产物不入库
+research/
+build/
+out/
+*.deb
+*.sha256
+.DS_Store
+._*

@@ -1,0 +1,101 @@
+###############################################
+# MediaMTX for TOS 7 — 默认配置（由安装脚本首装生成到 /var/lib/mediamtx/mediamtx.yml）
+#
+# 本文件只写「与上游默认值不同 / 需要固定」的键；未列出的键沿用上游默认值。
+# 完整键列表与说明:
+#   https://github.com/bluenviron/mediamtx/blob/v1.21.1/mediamtx.yml
+# 修改本文件后服务会自动热加载（也可 systemctl restart mediamtx 立即生效）。
+# 升级 deb 不会覆盖本文件。
+#
+# 安全设计：
+#   * 媒体端口（RTSP/RTMP/HLS/WebRTC/SRT）对本机所在局域网开放 —— 这是应用的
+#     核心功能（摄像头/编码器推流、播放器拉流），防火墙按需放行。
+#   * 管理 API / 指标 / 回放只监听回环，绝不对外；经 TOS 网关 /mediamtx/ 访问。
+#   * 观看（read/playback）默认匿名；推流（publish）需要用户名 publisher 与
+#     安装时随机生成的密码（root 可读: /var/lib/mediamtx/publisher_password.txt）。
+#     如需连观看也鉴权，把下面第一个 any 用户的 read/playback 删掉并给其 set 密码。
+###############################################
+
+logLevel: info
+logDestinations: [stdout]
+
+###############################################
+# 认证
+authMethod: internal
+authInternalUsers:
+  # 匿名观看（HLS/WebRTC 浏览器播放、RTSP 拉流）
+  - user: any
+    pass:
+    permissions:
+      - action: read
+      - action: playback
+
+  # 推流账号（密码由安装脚本随机生成并写入本文件；请妥善保管）
+  - user: publisher
+    pass: __MTX_PUBLISH_PASSWORD__
+    permissions:
+      - action: publish
+
+  # 本机回环免密：管理 API / 指标（经 TOS 网关反向代理访问）
+  - user: any
+    pass:
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: api
+      - action: metrics
+
+###############################################
+# 媒体端口（对局域网开放）
+# RTSP —— 监控摄像头 / VLC / ffmpeg 的主流协议
+rtsp: true
+rtspAddress: :8554
+# 传输方式：UDP(RTP/RTCP) + TCP 交错（默认不含组播）。
+# UDP 需要额外开放 :8000(UDP/RTP) 与 :8001(UDP/RTCP)——这是 RTSP 协议的
+# 标准传输端口，也是多数摄像头/NVR 的默认推流方式；纯 TCP 会拒绝默认 UDP
+# 的客户端（实测 ffmpeg 不加 -rtsp_transport tcp 即 461）。
+rtspTransports: [udp, tcp]
+
+# RTMP —— OBS 等编码器推流
+rtmp: true
+rtmpAddress: :1935
+
+# HLS —— 纯 HTTP，可经 TOS 网关 /mediamtx/hls/ 直接观看
+hls: true
+hlsAddress: :8888
+
+# WebRTC —— 浏览器低延迟播放 / WHIP-WHEP 推流（HTTP + ICE/UDP）
+webrtc: true
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcIPsFromInterfaces: true
+
+# SRT —— 弱网推流
+srt: true
+srtAddress: :8890
+
+###############################################
+# 管理端口（仅回环，不对外暴露）
+# API（控制台经 TOS 网关 /mediamtx/api/ 调用）
+api: true
+apiAddress: 127.0.0.1:9997
+
+# Prometheus 指标（仅回环）
+metrics: true
+metricsAddress: 127.0.0.1:9998
+
+# 回放服务：默认关闭（需要远端录制源时再开启；开启后仍只监听回环）
+playback: false
+playbackAddress: 127.0.0.1:9996
+
+# 以下服务默认关闭，避免多余端口与自签证书落盘
+# pprof（性能分析）
+pprof: false
+# MoQ（Media over QUIC，需要 TLS 证书）
+moq: false
+
+###############################################
+# 路径
+# paths 下键名为流路径名，未显式列出的路径由 all_others 兜底。
+# 这里保留上游默认：任意路径名都可以按需自动创建（推流即建、无人观看即回收）。
+paths:
+  all_others:

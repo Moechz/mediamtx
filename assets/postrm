@@ -1,0 +1,33 @@
+#!/bin/bash
+# postrm - 删除/清除后处理（官方模板 + 本应用清理项）
+set -e
+
+APP_USER=mediamtx
+MAINT_LOG=/var/log/mediamtx-maint.log
+mkdir -p /var/log 2>/dev/null || true
+echo "$(date '+%F %T') postrm $*" >> "$MAINT_LOG" 2>/dev/null || true
+
+systemctl daemon-reload 2>/dev/null || true
+
+if [ "$1" = "purge" ]; then
+  # 配置 / 录制 / 首装密码文件（remove 时保留，purge 才全清）
+  rm -rf /var/lib/mediamtx
+  # 系统层注册文件（postinst 兜底安装的）
+  rm -f /etc/systemd/system/mediamtx.service
+  rm -rf /etc/systemd/system/mediamtx.service.d
+  rm -f /etc/nginx/conf.d/mediamtx.conf
+  # 运行用户
+  if id -u "$APP_USER" > /dev/null 2>&1; then
+    userdel "$APP_USER" 2>/dev/null || true
+  fi
+  systemctl daemon-reload 2>/dev/null || true
+  if command -v nginx > /dev/null 2>&1 && nginx -t > /dev/null 2>&1; then
+    nginx -s reload > /dev/null 2>&1 || true
+  fi
+  # /usr/local/mediamtx 下 postinst 派生的文件不在 dpkg 清单里，补清以免残留
+  rm -f /usr/local/mediamtx/index.html /usr/local/mediamtx/mediamtx.env
+  rmdir --ignore-fail-on-non-empty /usr/local/mediamtx 2>/dev/null || true
+  # 注：/var/log/mediamtx-maint.log 保留（purge 取证用）
+fi
+
+exit 0
