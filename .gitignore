@@ -4,5 +4,11 @@ build/
 out/
 *.deb
 *.sha256
+*.log
 .DS_Store
 ._*
+
+# 内部交接文档（含内网/测试机信息，勿推公开仓库 —— 打包指南坑 20）
+AGENTS.md
+HANDOFF.md
+docs/TASK_STATE.md
