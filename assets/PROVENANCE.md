@@ -31,9 +31,9 @@ git checkout 048255986f7e04b859b4c4efe651448ec785ecd4
 # 2. generated assets (sha256-pinned inside the upstream source tree)
 go generate ./...      # hls.js v1.7.3, mediamtx-rpicamera v2.9.0
 
-# 3. build (same flags as upstream scripts/binaries.mk, plus -trimpath)
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFLAGS=-trimpath go build -o mediamtx .
-#                                                                  ^ arm64 for aarch64
+# 3. build (same flags as upstream scripts/binaries.mk, plus trimpath/buildvcs)
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFLAGS="-trimpath -buildvcs=false" go build -o mediamtx .
+#                                                                              ^ arm64 for aarch64
 
 # 4. reproducible-build assertion: run step 3 twice with independent
 #    GOCACHE directories; sha256 of both outputs must be identical.
@@ -47,7 +47,12 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOFLAGS=-trimpath go build -o mediamtx .
 any other packer is applied**, so the ELF keeps complete section headers and is
 inspectable with standard tools. The `internal/core/VERSION` string is derived
 from the git tag by `go generate`, not from a build timestamp, so builds do not
-embed wall-clock time.
+embed wall-clock time. `-buildvcs=false` disables Go's automatic VCS stamping,
+which would otherwise make the output depend on whether untracked build
+artifacts happen to be present in the working tree (observed in practice: the
+second build in a row differs because the first build's output becomes an
+untracked file); the source commit is documented here and in the release notes
+instead.
 
 ## 3. Embedded third-party assets
 
@@ -73,7 +78,7 @@ upstream module graph pinned by `go.mod` + `go.sum`.
 |---|---|
 | `mediamtx-linux-amd64.tar.gz` (CI source build) | printed in the Release `SHA256SUMS` and pinned in `config.env` (`SHA256_TARBALL_AMD64`) |
 | `mediamtx-linux-arm64.tar.gz` (CI source build) | release `SHA256SUMS` + `config.env` (`SHA256_TARBALL_ARM64`) |
-| `mediamtx` binary (amd64, local reference build) | `ca0d9e52c21d062c645ad2b5adc29375c8a0838357aa0d8d63edb7e7637f59cf` |
+| `mediamtx` binary (amd64, local reference build) | `4d9ebd792b6bffd7a55fb261e708ab03bb918d292fa44d5480a9a706fe53c668` |
 
 Two independent local builds (fresh `GOCACHE`, same toolchain) produced this exact
 hash; the CI job repeats the double-build assertion on every release.

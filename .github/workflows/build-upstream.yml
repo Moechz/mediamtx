@@ -29,7 +29,10 @@ permissions:
 
 env:
   GO_VERSION: '1.26.8'
-  GOFLAGS: -trimpath
+  # -trimpath: 去除构建机路径；-buildvcs=false: 关闭 VCS 盖章
+  # （否则仓库内新增的未跟踪产物会把 vcs.modified 从 false 翻成 true，
+  #  导致同一 job 内两次构建字节不一致——实测踩过）。
+  GOFLAGS: -trimpath -buildvcs=false
 
 jobs:
   build:
@@ -120,7 +123,7 @@ jobs:
             [`.github/workflows/build-upstream.yml`](https://github.com/Moechz/mediamtx/blob/main/.github/workflows/build-upstream.yml).
 
             * Go toolchain: go1.26.8 (pinned in `config.env`)
-            * `CGO_ENABLED=0` fully static, **no UPX**, `GOFLAGS=-trimpath`
+            * `CGO_ENABLED=0` fully static, **no UPX**, `GOFLAGS=-trimpath -buildvcs=false`
             * **Bit-reproducible**: each architecture is built twice with independent
               `GOCACHE` directories and the two sha256 sums are asserted equal in CI
             * `go generate ./...` downloads hls.js v1.7.3 and mediamtx-rpicamera v2.9.0,

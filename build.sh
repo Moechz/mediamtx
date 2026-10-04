@@ -498,10 +498,10 @@ MediaMTX for TOS — V6 可复现构建配方（bit-reproducible）
 上游 commit: 048255986f7e04b859b4c4efe651448ec785ecd4
 Go 工具链  : go$GO_TOOLCHAIN_VERSION （https://go.dev/dl/go$GO_TOOLCHAIN_VERSION.linux-amd64.tar.gz）
 CI 配方    : .github/workflows/build-upstream.yml （公开 Actions 日志）
-构建命令（与上游 scripts/binaries.mk / release.yml 一致）:
+构建命令（与上游 scripts/binaries.mk / release.yml 一致，另加可复现所需两项 flag）:
   git clone --branch $TAG $UPSTREAM_REPO && cd mediamtx
   go generate ./...                 # 下载 hls.js 与 rpicamera（均 sha256 pin 校验）
-  CGO_ENABLED=0 GOOS=linux GOARCH=<amd64|arm64> GOFLAGS=-trimpath go build -o mediamtx .
+  CGO_ENABLED=0 GOOS=linux GOARCH=<amd64|arm64> GOFLAGS="-trimpath -buildvcs=false" go build -o mediamtx .
 复现校验: 同一环境独立构建两次字节一致（CI 内已断言）
 产物发布: $BIN_SOURCE_BASE/$TGZ
 校验值   : 见 Release 的 SHA256SUMS 与 config.env 的 pin（两层独立互验）
