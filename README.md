@@ -41,6 +41,44 @@ privacy-policy.html       privacy policy (required by review item C3)
 PROVENANCE.md             audit trail: sources, hashes, exact build recipe
 ```
 
+## Privacy
+
+This application runs entirely on your NAS. **The developer does not collect, receive or
+have access to any data processed by the application.** No telemetry, no analytics, no
+account.
+
+| Topic | Detail |
+|---|---|
+| Data processed | Configuration, database, caches, logs and the files you create with the app. |
+| Where it is stored | `/var/lib/mediamtx` (configuration and recordings); `apt remove` keeps it, `apt purge` deletes it. |
+| Retention period | Until **you** delete it; logs are rotated or size-limited by the application. |
+| Your rights | Access/export by copying the data location; correct in the app; delete with `apt purge` / “delete data”. |
+| Deletion channel | Remove the data yourself, or email **moechz@163.com** (answered within 30 days). |
+| Security measures | Dedicated unprivileged system user, only the required ports, rebuilt on upstream fixes. |
+| Children | Not directed at children. |
+
+**Full privacy policy:** [PRIVACY.md](PRIVACY.md) — <https://github.com/Moechz/mediamtx/blob/main/PRIVACY.md>
+
+## Third-party services (API disclosure)
+
+The developer operates no server in this path. The app contacts only the services you
+configure. Full table in [PRIVACY.md](PRIVACY.md) §6.
+
+## Licence and attributions
+
+| Component | Licence | Notes |
+|---|---|---|
+| MediaMTX | MIT | upstream application |
+| This packaging | GPL-3.0 (see `LICENSE`) | TOS metadata, units, scripts, translations, icon |
+
+“MediaMTX”, “TerraMaster” and “TOS” are trademarks of their respective owners. This is an
+independent community package by Moechz. Full details: [NOTICE.md](NOTICE.md).
+
+## Support
+
+- Email: moechz@163.com
+- Privacy: [PRIVACY.md](PRIVACY.md) · Licence: [NOTICE.md](NOTICE.md)
+
 ## Build
 
 ```bash
